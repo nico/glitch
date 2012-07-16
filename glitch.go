@@ -1,13 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
-	//"runtime"
+	"runtime"
 	"strconv"
 	"strings"
 )
@@ -153,7 +155,7 @@ func dosubst(script []string, paths *Paths) {
 	//}
 }
 
-func executeScript(commands []string, paths *Paths) bool {
+func executeScript(commands []string, paths *Paths) (bool, *bytes.Buffer, *bytes.Buffer) {
 	bashPath := "/bin/sh"
 	script := paths.tmpBase + ".script" // XXX
 	//fmt.Println(script)
@@ -167,18 +169,22 @@ func executeScript(commands []string, paths *Paths) bool {
 
 	// XXX: set env (PATH)
 	cmd.Env = []string{
-		"PATH=/Users/thakis/src/llvm/Release+Asserts/bin:" + os.Getenv("PATH"),
-		/*"LLVM_DISABLE_CRASH_REPORT=1"*/}
+		"PATH=/Users/thakis/src/llvm/Release+Asserts/bin:" + os.Getenv("PATH")}
+
+        var stdout bytes.Buffer
+        cmd.Stdout = &stdout
+        var stderr bytes.Buffer
+        cmd.Stderr = &stderr
 
 	err := cmd.Run()
 	if err != nil {
 		if werr, ok := err.(*exec.ExitError); ok && !werr.Success() {
-			return false
+			return false, &stdout, &stderr
 		} else {
 			log.Fatal(err)
 		}
 	}
-	return true
+	return true, &stdout, &stderr
 }
 
 func isExpectedFail(xfails []string) bool {
@@ -225,10 +231,12 @@ func run(testfilename string, index int) {
 	os.MkdirAll(paths.tmpBase, 0777)
 
 	isXFail := isExpectedFail(state.xfails)
-	success := executeScript(state.script, paths)
+	success, stdout, stderr := executeScript(state.script, paths)
 	if !success && !isXFail {
 		//fmt.Println("Failed: " + err.Error())
 		fmt.Println("Failed: " + testfilename)
+                io.Copy(os.Stdout, stdout)
+                io.Copy(os.Stdout, stderr)
 		fails++
 	} else {
 		//fmt.Println("success: " + testfilename)
@@ -255,8 +263,8 @@ func walk(path string, info os.FileInfo, err error) error {
 		i++
 		c <- i
 		go func() {
-			<-c
 			run(path, -1)
+			<-c
 		}()
 
 		//run(path)
@@ -266,7 +274,7 @@ func walk(path string, info os.FileInfo, err error) error {
 }
 
 func main() {
-	c = make(chan int, 1) // > 2 -> fd crash
+	c = make(chan int, runtime.NumCPU())
 
 	// XXX needed? system-level stuff uses multiple cores already
 	//runtime.GOMAXPROCS(runtime.NumCPU())
