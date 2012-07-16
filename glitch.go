@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -12,6 +13,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func contains(strings []string, s string) bool {
@@ -156,7 +158,8 @@ func dosubst(script []string, paths *Paths) {
 }
 
 func executeScript(commands []string, paths *Paths) (bool, *bytes.Buffer, *bytes.Buffer) {
-	bashPath := "/bin/sh"
+	// XXX: better bash lookup
+	bashPath := "/bin/bash"             // NOTE: '/bin/sh' makes Driver/crash-report.c fail
 	script := paths.tmpBase + ".script" // XXX
 	//fmt.Println(script)
 	ioutil.WriteFile(script, []byte(strings.Join(commands, " &&\n")), 0666)
@@ -171,10 +174,10 @@ func executeScript(commands []string, paths *Paths) (bool, *bytes.Buffer, *bytes
 	cmd.Env = []string{
 		"PATH=/Users/thakis/src/llvm/Release+Asserts/bin:" + os.Getenv("PATH")}
 
-        var stdout bytes.Buffer
-        cmd.Stdout = &stdout
-        var stderr bytes.Buffer
-        cmd.Stderr = &stderr
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 
 	err := cmd.Run()
 	if err != nil {
@@ -235,8 +238,8 @@ func run(testfilename string, index int) {
 	if !success && !isXFail {
 		//fmt.Println("Failed: " + err.Error())
 		fmt.Println("Failed: " + testfilename)
-                io.Copy(os.Stdout, stdout)
-                io.Copy(os.Stdout, stderr)
+		io.Copy(os.Stdout, stdout)
+		io.Copy(os.Stdout, stderr)
 		fails++
 	} else {
 		//fmt.Println("success: " + testfilename)
@@ -245,6 +248,7 @@ func run(testfilename string, index int) {
 }
 
 var i = 0
+var maxdone = 0
 
 var c chan int
 
@@ -255,15 +259,25 @@ func walk(path string, info os.FileInfo, err error) error {
 	if contains([]string{".svn", "Output", "Inputs"}, base) {
 		return filepath.SkipDir
 	}
+
+	// If there's a command-line arg, filter tests on it
+	if len(flag.Args()) > 0 && !strings.Contains(path, flag.Arg(0)) {
+		return nil
+	}
+
 	// XXX get extension list from config file
 	ext := filepath.Ext(base)
 	if contains([]string{".c", ".cpp", ".m", ".mm", ".cu", ".ll", ".cl", ".s"}, ext) {
 		//fmt.Println(path)
 		//go run(path, -1)
+
+		// Don't start more jobs than cap(c) at once
 		i++
 		c <- i
 		go func() {
 			run(path, -1)
+			//fmt.Println(i, maxdone)
+			maxdone++
 			<-c
 		}()
 
@@ -274,6 +288,7 @@ func walk(path string, info os.FileInfo, err error) error {
 }
 
 func main() {
+	flag.Parse()
 	c = make(chan int, runtime.NumCPU())
 
 	// XXX needed? system-level stuff uses multiple cores already
@@ -312,6 +327,11 @@ func main() {
 	//Failed: /Users/thakis/src/llvm/tools/clang/test/Driver/crash-report.c
 	//Failed: /Users/thakis/src/llvm/tools/clang/test/Index/Inputs/crash-recovery-code-complete-remap.c
 	filepath.Walk("/Users/thakis/src/llvm/tools/clang/test", walk)
+
+	// Wait for all tests to complete!
+	for maxdone < i {
+		time.Sleep(1e9 / 4) // 1/4s
+	}
 
 	fmt.Printf("Failed %d / %d", fails, total)
 }
