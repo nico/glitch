@@ -174,9 +174,8 @@ func executeScript(commands []string, paths *Paths) (bool, *bytes.Buffer, *bytes
 	cmd.Env = []string{
 		"PATH=/Users/thakis/src/llvm/Release+Asserts/bin:" + os.Getenv("PATH")}
 
-	var stdout bytes.Buffer
+	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
-	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 
 	err := cmd.Run()
@@ -265,12 +264,9 @@ func walk(path string, info os.FileInfo, err error) error {
 		return nil
 	}
 
-	// XXX get extension list from config file
+	// XXX get extension list from config file?
 	ext := filepath.Ext(base)
 	if contains([]string{".c", ".cpp", ".m", ".mm", ".cu", ".ll", ".cl", ".s"}, ext) {
-		//fmt.Println(path)
-		//go run(path, -1)
-
 		// Don't start more jobs than cap(c) at once
 		i++
 		c <- i
@@ -283,6 +279,9 @@ func walk(path string, info os.FileInfo, err error) error {
 
 		//run(path)
 		//os.Exit(0)
+	} else if ext == "" && strings.HasSuffix(base, "Tests") {
+		// XXX could check if executable with os.Stat()?
+		fmt.Println(path)
 	}
 	return nil
 }
@@ -321,12 +320,11 @@ func main() {
 	// XXX: subdirectories can contain local configs (e.g. test/Unit/lit.cfg,
 	//                                                     test/SemaCXX/Inputs/lit.local.cfg)
 
-	// XXX:
-
-	// Need investigation
-	//Failed: /Users/thakis/src/llvm/tools/clang/test/Driver/crash-report.c
+	// XXX: Why does this have a RUN: line?
 	//Failed: /Users/thakis/src/llvm/tools/clang/test/Index/Inputs/crash-recovery-code-complete-remap.c
+
 	filepath.Walk("/Users/thakis/src/llvm/tools/clang/test", walk)
+	filepath.Walk("/Users/thakis/src/llvm/tools/clang/unittests", walk)
 
 	// Wait for all tests to complete!
 	for maxdone < i {
