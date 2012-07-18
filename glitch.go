@@ -36,8 +36,6 @@ type TestScript struct {
 // 'RUN' as well as 'XFAIL' and 'XTARGET' information. The RUN lines also will
 // have variable substitution performed.
 func parseIntegratedTestScript(testfilename string) (*TestScript, error) {
-	// XXX substitutions. Come from lit.cfg in lit.
-
 	script := []string{}
 	xfails := []string{}
 	xtargets := []string{}
@@ -48,9 +46,7 @@ func parseIntegratedTestScript(testfilename string) (*TestScript, error) {
 		return nil, err
 	}
 
-	//if err != nil { return nil, err }  XXX
 	for _, l := range strings.Split(string(b), "\n") {
-		//if strings.Contains(l, "RUN:") {
 		if index := strings.Index(l, "RUN:"); index != -1 {
 			// Isolate the command to run.
 			l = l[index+len("RUN:"):]
@@ -148,19 +144,12 @@ func dosubst(script []string, paths *Paths) {
 	//        msg = ', '.join(missing_required_features)
 	//        return (Test.UNSUPPORTED,
 	//                "Test requires the following features: %s" % msg)
-	//
-	//    isXFail = isExpectedFail(xfails, xtargets, test.suite.config.target_triple)
-	//    return script,isXFail,tmpBase,execdir
-
-	//if len(script) > 0 {
-	//fmt.Println(script[0])
-	//}
 }
 
 func executeScript(commands []string, paths *Paths) (bool, *bytes.Buffer, *bytes.Buffer) {
 	// XXX: better bash lookup
 	bashPath := "/bin/bash"             // NOTE: '/bin/sh' makes Driver/crash-report.c fail
-	script := paths.tmpBase + ".script" // XXX
+	script := paths.tmpBase + ".script"
 	//fmt.Println(script)
 	ioutil.WriteFile(script, []byte(strings.Join(commands, " &&\n")), 0666)
 
@@ -209,7 +198,7 @@ func run(testfilename string, index int) {
 	}
 
 	if len(state.script) == 0 {
-		// XXX lit says "Test has no run line!"?
+		// XXX lit says "Test has no run line!"
 		return
 	}
 
@@ -228,14 +217,12 @@ func run(testfilename string, index int) {
 
 	dosubst(state.script, paths)
 
-	//  # Create the output directory if it does not already exist.
-	//  Util.mkdir_p(os.path.dirname(tmpBase))
+	// Create the output directory if it does not already exist.
 	os.MkdirAll(paths.tmpBase, 0777)
 
 	isXFail := isExpectedFail(state.xfails)
 	success, stdout, stderr := executeScript(state.script, paths)
 	if !success && !isXFail {
-		//fmt.Println("Failed: " + err.Error())
 		fmt.Println("Failed: " + testfilename)
 		io.Copy(os.Stdout, stdout)
 		io.Copy(os.Stdout, stderr)
@@ -264,7 +251,7 @@ func executegtest(testexe string, testname string) (bool, *bytes.Buffer, *bytes.
 	return true, &stdout, &stderr
 }
 
-func rungtest(testexe string, testname string)  {
+func rungtest(testexe string, testname string) {
 	success, stdout, stderr := executegtest(testexe, testname)
 	if !success {
 		fmt.Println("Failed: " + testexe + " " + testname)
@@ -329,13 +316,8 @@ func walk(path string, info os.FileInfo, err error) error {
 			maxdone++
 			<-c
 		}()
-
-		//run(path)
-		//os.Exit(0)
 	} else if ext == "" && strings.HasSuffix(base, "Tests") {
-		// XXX could check if executable with os.Stat()?
 		for _, name := range getGTestTests(path) {
-			//rungtest(path, name)
 			i++
 			c <- i
 			go func() {
@@ -360,8 +342,13 @@ func main() {
 	// XXX: Why does this have a RUN: line?
 	//Failed: /Users/thakis/src/llvm/tools/clang/test/Index/Inputs/crash-recovery-code-complete-remap.c
 
+  // XXX: try to pass a something to Walk that can access parameters, use that to inject paths
+  // (or let Walk just do the generator thing?)
 	filepath.Walk("/Users/thakis/src/llvm/tools/clang/test", walk)
 	filepath.Walk("/Users/thakis/src/llvm/tools/clang/unittests", walk)
+
+  // XXX: fancy progress meter
+  // XXX: slightly more detailed status / error printing
 
 	// Wait for all tests to complete!
 	for maxdone < i {
