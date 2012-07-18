@@ -322,12 +322,12 @@ func main() {
 	filepath.Walk("/Users/thakis/src/llvm/tools/clang/test", walk)
 	filepath.Walk("/Users/thakis/src/llvm/tools/clang/unittests", walk)
 
-	var total, fails, maxdone, i = 0, 0, 0, 0
+	var finished, fails, started = 0, 0, 0
 	c := make(chan int, runtime.NumCPU())
 	for _, test := range tests {
 		// Don't start more jobs than cap(c) at once
-		i++
-		c <- i
+		started++
+		c <- started  // value doesn't matter
 		// Without this line, the goroutine would use whatever value
 		// |test| has when the goroutine starts running. Making a local
 		// copy prevents that (...and slows down the program 0.3s :-/)
@@ -341,8 +341,7 @@ func main() {
 				fmt.Println("stderr: ", result.stderr)
 				fails++
 			}
-			total++
-			maxdone++
+			finished++
 			<-c
 		}()
 	}
@@ -351,9 +350,9 @@ func main() {
 	// XXX: slightly more detailed status / error printing
 
 	// Wait for all tests to complete!
-	for maxdone < i {
+	for finished < started {
 		time.Sleep(1e9 / 4) // 1/4s
 	}
 
-	fmt.Printf("Failed %d / %d", fails, total)
+	fmt.Printf("Failed %d / %d", fails, finished)
 }
