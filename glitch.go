@@ -244,17 +244,14 @@ func executegtest(testexe string, testname string) TestResult {
 }
 
 func getGTestTests(path string) []string {
-	cmd := exec.Command(path, "--gtest_list_tests")
-	var stdout bytes.Buffer
-	cmd.Stdout = &stdout
-	err := cmd.Run()
+	out, err := exec.Command(path, "--gtest_list_tests").Output()
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	result := []string{}
 	currentTestClass := ""
-	for _, l := range strings.Split(string(stdout.String()), "\n") {
+	for _, l := range strings.Split(string(out), "\n") {
 		if !strings.HasPrefix(l, "  ") {
 			currentTestClass = l
 			continue
@@ -332,13 +329,17 @@ func main() {
 	var fails = 0
 	c := make(chan int, runtime.NumCPU())
 	for _, test := range tests {
+		//fmt.Println(test.name)
 		// Don't start more jobs than cap(c) at once
 		i++
 		c <- i
+		// XXX figure out why this copy makes spurious test failures go away,
+		// and why it slows down the program by 0.3s
+		t := test
 		go func() {
-			result := test.run()
+			result := t.run()
 			if !result.success {
-				fmt.Println("Failed: " + test.name)
+				fmt.Println("Failed: " + t.name)
 				fmt.Println("stdout: ", result.stdout)
 				fmt.Println("stderr: ", result.stderr)
 				fails++
