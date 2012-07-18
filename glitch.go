@@ -275,6 +275,11 @@ type TestResult struct {
 	stderr  string
 }
 
+type NamedTestResult struct {
+	name   string
+	result TestResult
+}
+
 func findTests(path string, result []*Test) []*Test {
 	// XXX get extension list from config file?
 	ext := filepath.Ext(path)
@@ -323,26 +328,36 @@ func main() {
 	filepath.Walk("/Users/thakis/src/llvm/tools/clang/unittests", walk)
 
 	var finished, fails, started = 0, 0, 0
-	c := make(chan int, runtime.NumCPU())
+	queue := make(chan bool, runtime.NumCPU())
+
+	results := make(chan NamedTestResult, runtime.NumCPU())
+	// Background result printing goroutine
+	go func() {
+		for {
+			result := <-results
+			//fmt.Println(result.name)
+			if !result.result.success {
+				fmt.Println("Failed: " + result.name)
+				fmt.Println("stdout: ", result.result.stdout)
+				fmt.Println("stderr: ", result.result.stderr)
+				fails++
+			}
+		}
+	}()
+
 	for _, test := range tests {
-		// Don't start more jobs than cap(c) at once
+		// Don't start more jobs than cap(queue) at once
 		started++
-		c <- started  // value doesn't matter
+		queue <- true // value doesn't matter
 		// Without this line, the goroutine would use whatever value
 		// |test| has when the goroutine starts running. Making a local
 		// copy prevents that (...and slows down the program 0.3s :-/)
-		// and why it slows down the program by 0.3s
 		var t *Test = test
 		go func() {
 			result := t.run()
-			if !result.success {
-				fmt.Println("Failed: " + t.name)
-				fmt.Println("stdout: ", result.stdout)
-				fmt.Println("stderr: ", result.stderr)
-				fails++
-			}
 			finished++
-			<-c
+			results <- NamedTestResult{t.name, result}
+			<-queue
 		}()
 	}
 
