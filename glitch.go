@@ -264,9 +264,6 @@ func getGTestTests(path string) []string {
 	return result
 }
 
-var i = 0
-var maxdone = 0
-
 type Test struct {
 	name string
 	run  func() TestResult
@@ -325,11 +322,9 @@ func main() {
 	filepath.Walk("/Users/thakis/src/llvm/tools/clang/test", walk)
 	filepath.Walk("/Users/thakis/src/llvm/tools/clang/unittests", walk)
 
-	var total = 0
-	var fails = 0
+	var total, fails, maxdone, i = 0, 0, 0, 0
 	c := make(chan int, runtime.NumCPU())
 	for _, test := range tests {
-		//fmt.Println(test.name)
 		// Don't start more jobs than cap(c) at once
 		i++
 		c <- i
