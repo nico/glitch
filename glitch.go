@@ -333,9 +333,11 @@ func main() {
 		// Don't start more jobs than cap(c) at once
 		i++
 		c <- i
-		// XXX figure out why this copy makes spurious test failures go away,
+		// Without this line, the goroutine would use whatever value
+		// |test| has when the goroutine starts running. Making a local
+		// copy prevents that (...and slows down the program 0.3s :-/)
 		// and why it slows down the program by 0.3s
-		t := test
+		var t *Test = test
 		go func() {
 			result := t.run()
 			if !result.success {
