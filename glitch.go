@@ -188,10 +188,7 @@ func isExpectedFail(xfails []string) bool {
 	return false
 }
 
-var total = 0
-var fails = 0
-
-func run(testfilename string, index int) {
+func run(testfilename string, index int) TestResult {
 	state, err := parseIntegratedTestScript(testfilename)
 	if err != nil {
 		log.Fatal(err)
@@ -199,7 +196,7 @@ func run(testfilename string, index int) {
 
 	if len(state.script) == 0 {
 		// XXX lit says "Test has no run line!"
-		return
+		return TestResult{false, nil, nil}
 	}
 
 	paths := &Paths{}
@@ -223,17 +220,12 @@ func run(testfilename string, index int) {
 	isXFail := isExpectedFail(state.xfails)
 	success, stdout, stderr := executeScript(state.script, paths)
 	if !success && !isXFail {
-		fmt.Println("Failed: " + testfilename)
-		io.Copy(os.Stdout, stdout)
-		io.Copy(os.Stdout, stderr)
-		fails++
-	} else {
-		//fmt.Println("success: " + testfilename)
+		return TestResult{false, stdout, stderr}
 	}
-	total++
+	return TestResult{true, stdout, stderr}
 }
 
-func executegtest(testexe string, testname string) (bool, *bytes.Buffer, *bytes.Buffer) {
+func executegtest(testexe string, testname string) TestResult {
 	cmd := exec.Command(testexe, "--gtest_filter="+testname)
 	// XXX env / pwd?
 
@@ -243,23 +235,12 @@ func executegtest(testexe string, testname string) (bool, *bytes.Buffer, *bytes.
 	err := cmd.Run()
 	if err != nil {
 		if werr, ok := err.(*exec.ExitError); ok && !werr.Success() {
-			return false, &stdout, &stderr
+			return TestResult{false, &stdout, &stderr}
 		} else {
 			log.Fatal(err)
 		}
 	}
-	return true, &stdout, &stderr
-}
-
-func rungtest(testexe string, testname string) {
-	success, stdout, stderr := executegtest(testexe, testname)
-	if !success {
-		fmt.Println("Failed: " + testexe + " " + testname)
-		io.Copy(os.Stdout, stdout)
-		io.Copy(os.Stdout, stderr)
-		fails++
-	}
-	total++
+	return TestResult{true, &stdout, &stderr}
 }
 
 func getGTestTests(path string) []string {
@@ -289,49 +270,36 @@ func getGTestTests(path string) []string {
 var i = 0
 var maxdone = 0
 
-var c chan int
+type Test struct {
+	name string
+	run  func() TestResult
+}
 
-func walk(path string, info os.FileInfo, err error) error {
-	// if filename in ('Output', '.svn') or filename in lc.excludes:
-	// lit.cfg adds `config.excludes = ['Inputs']`
-	base := filepath.Base(path)
-	if contains([]string{".svn", "Output", "Inputs"}, base) {
-		return filepath.SkipDir
-	}
+type TestResult struct {
+	success bool
+	stdout  *bytes.Buffer
+	stderr  *bytes.Buffer
+}
 
-	// If there's a command-line arg, filter tests on it
-	if len(flag.Args()) > 0 && !strings.Contains(path, flag.Arg(0)) {
-		return nil
-	}
-
+func findTests(path string, result []*Test) []*Test {
 	// XXX get extension list from config file?
-	ext := filepath.Ext(base)
+	ext := filepath.Ext(path)
 	if contains([]string{".c", ".cpp", ".m", ".mm", ".cu", ".ll", ".cl", ".s"}, ext) {
-		// Don't start more jobs than cap(c) at once
-		i++
-		c <- i
-		go func() {
-			run(path, -1)
-			maxdone++
-			<-c
-		}()
-	} else if ext == "" && strings.HasSuffix(base, "Tests") {
+		result = append(result, &Test{filepath.Base(path), func() TestResult { return run(path, -1) }})
+	} else if ext == "" && strings.HasSuffix(path, "Tests") {
 		for _, name := range getGTestTests(path) {
-			i++
-			c <- i
-			go func() {
-				rungtest(path, name)
-				maxdone++
-				<-c
-			}()
+			result = append(result, &Test{
+				name,
+				func() TestResult {
+					return executegtest(path, name)
+				}})
 		}
 	}
-	return nil
+	return result
 }
 
 func main() {
 	flag.Parse()
-	c = make(chan int, runtime.NumCPU())
 
 	// XXX needed? system-level stuff uses multiple cores already
 	//runtime.GOMAXPROCS(runtime.NumCPU())
@@ -343,8 +311,43 @@ func main() {
 
 	// XXX: try to pass a something to Walk that can access parameters, use that to inject paths
 	// (or let Walk just do the generator thing?)
+	tests := []*Test{}
+	walk := func(path string, info os.FileInfo, err error) error {
+		// if filename in ('Output', '.svn') or filename in lc.excludes:
+		// lit.cfg adds `config.excludes = ['Inputs']`
+		if contains([]string{".svn", "Output", "Inputs"}, filepath.Base(path)) {
+			return filepath.SkipDir
+		}
+		// If there's a command-line arg, filter tests on it
+		if len(flag.Args()) > 0 && !strings.Contains(path, flag.Arg(0)) {
+			return nil
+		}
+		tests = findTests(path, tests)
+		return nil
+	}
 	filepath.Walk("/Users/thakis/src/llvm/tools/clang/test", walk)
 	filepath.Walk("/Users/thakis/src/llvm/tools/clang/unittests", walk)
+
+	var total = 0
+	var fails = 0
+	c := make(chan int, runtime.NumCPU())
+	for _, test := range tests {
+		// Don't start more jobs than cap(c) at once
+		i++
+		c <- i
+		go func() {
+			result := test.run()
+			if !result.success {
+				fmt.Println("Failed: " + test.name)
+				io.Copy(os.Stdout, result.stdout)
+				io.Copy(os.Stdout, result.stderr)
+				fails++
+			}
+			total++
+			maxdone++
+			<-c
+		}()
+	}
 
 	// XXX: fancy progress meter
 	// XXX: slightly more detailed status / error printing
