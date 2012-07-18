@@ -246,6 +246,35 @@ func run(testfilename string, index int) {
 	total++
 }
 
+func executegtest(testexe string, testname string) (bool, *bytes.Buffer, *bytes.Buffer) {
+	cmd := exec.Command(testexe, "--gtest_filter="+testname)
+	// XXX env / pwd?
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	if err != nil {
+		if werr, ok := err.(*exec.ExitError); ok && !werr.Success() {
+			return false, &stdout, &stderr
+		} else {
+			log.Fatal(err)
+		}
+	}
+	return true, &stdout, &stderr
+}
+
+func rungtest(testexe string, testname string)  {
+	success, stdout, stderr := executegtest(testexe, testname)
+	if !success {
+		fmt.Println("Failed: " + testexe + " " + testname)
+		io.Copy(os.Stdout, stdout)
+		io.Copy(os.Stdout, stderr)
+		fails++
+	}
+	total++
+}
+
 func getGTestTests(path string) []string {
 	cmd := exec.Command(path, "--gtest_list_tests")
 	var stdout bytes.Buffer
@@ -305,8 +334,16 @@ func walk(path string, info os.FileInfo, err error) error {
 		//os.Exit(0)
 	} else if ext == "" && strings.HasSuffix(base, "Tests") {
 		// XXX could check if executable with os.Stat()?
-		tests := getGTestTests(path)
-		fmt.Println(len(tests))
+		for _, name := range getGTestTests(path) {
+			//rungtest(path, name)
+			i++
+			c <- i
+			go func() {
+				rungtest(path, name)
+				maxdone++
+				<-c
+			}()
+		}
 	}
 	return nil
 }
@@ -323,8 +360,8 @@ func main() {
 	// XXX: Why does this have a RUN: line?
 	//Failed: /Users/thakis/src/llvm/tools/clang/test/Index/Inputs/crash-recovery-code-complete-remap.c
 
-	filepath.Walk("/Users/thakis/src/llvm/tools/clang/unittests", walk)
 	filepath.Walk("/Users/thakis/src/llvm/tools/clang/test", walk)
+	filepath.Walk("/Users/thakis/src/llvm/tools/clang/unittests", walk)
 
 	// Wait for all tests to complete!
 	for maxdone < i {
