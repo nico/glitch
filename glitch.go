@@ -246,6 +246,30 @@ func run(testfilename string, index int) {
 	total++
 }
 
+func getGTestTests(path string) []string {
+	cmd := exec.Command(path, "--gtest_list_tests")
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	err := cmd.Run()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	result := []string{}
+	currentTestClass := ""
+	for _, l := range strings.Split(string(stdout.String()), "\n") {
+		if !strings.HasPrefix(l, "  ") {
+			currentTestClass = l
+			continue
+		}
+		if l[2] == ' ' {
+			log.Fatal(l)
+		}
+		result = append(result, currentTestClass+l[2:])
+	}
+	return result
+}
+
 var i = 0
 var maxdone = 0
 
@@ -281,7 +305,8 @@ func walk(path string, info os.FileInfo, err error) error {
 		//os.Exit(0)
 	} else if ext == "" && strings.HasSuffix(base, "Tests") {
 		// XXX could check if executable with os.Stat()?
-		fmt.Println(path)
+		tests := getGTestTests(path)
+		fmt.Println(len(tests))
 	}
 	return nil
 }
@@ -293,38 +318,13 @@ func main() {
 	// XXX needed? system-level stuff uses multiple cores already
 	//runtime.GOMAXPROCS(runtime.NumCPU())
 
-	// Find build mode, config files (has path to src root, obj root, tools dir,
-	// lib dir, target triple
-	// (Also path tweaks on win32)
-	// (Also get CLANG env var)
-
-	// Build a list of substitutions from cfg files
-
-	// Parse options
-
-	// Convert @include params
-
-	// Load tests
-	//args := [...]string{"/Users/thakis/src/llvm/tools/clang/test"}  // XXX argv
-
-	// tools/clang/test/lit.cfg has:
-	//config.test_format = lit.formats.ShTest(execute_external)
-
-	//// suffixes: A list of file extensions to treat as test files.
-	//config.suffixes = ['.c', '.cpp', '.m', '.mm', '.cu', '.ll', '.cl', '.s']
-
-	// Build generator for all tests
-	// Have test runner that essentially does config.test_format.execute(test, config)
-	// sh: TestRunner.executeShTest
-
-	// XXX: subdirectories can contain local configs (e.g. test/Unit/lit.cfg,
-	//                                                     test/SemaCXX/Inputs/lit.local.cfg)
+	// XXX get clang binary dir from flag
 
 	// XXX: Why does this have a RUN: line?
 	//Failed: /Users/thakis/src/llvm/tools/clang/test/Index/Inputs/crash-recovery-code-complete-remap.c
 
-	filepath.Walk("/Users/thakis/src/llvm/tools/clang/test", walk)
 	filepath.Walk("/Users/thakis/src/llvm/tools/clang/unittests", walk)
+	filepath.Walk("/Users/thakis/src/llvm/tools/clang/test", walk)
 
 	// Wait for all tests to complete!
 	for maxdone < i {
