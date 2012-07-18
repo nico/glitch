@@ -117,7 +117,7 @@ func dosubst(script []string, paths *Paths) {
 		{"%s", paths.sourcepath},
 		{"%S", paths.sourcedir},
 		{"%p", paths.sourcedir},
-		{"%{pathsep}", ":"},
+		{"%{pathsep}", string(os.PathListSeparator)},
 		{"%t", paths.tmpBase + ".tmp"},
 		{"%T", paths.tmpDir},
 		{"#_MARKER_#", "%"},
@@ -148,7 +148,7 @@ func dosubst(script []string, paths *Paths) {
 
 func executeScript(commands []string, paths *Paths) (bool, *bytes.Buffer, *bytes.Buffer) {
 	// XXX: better bash lookup
-	bashPath := "/bin/bash"             // NOTE: '/bin/sh' makes Driver/crash-report.c fail
+	bashPath := "/bin/bash" // NOTE: '/bin/sh' makes Driver/crash-report.c fail
 	script := paths.tmpBase + ".script"
 	//fmt.Println(script)
 	ioutil.WriteFile(script, []byte(strings.Join(commands, " &&\n")), 0666)
@@ -312,7 +312,6 @@ func walk(path string, info os.FileInfo, err error) error {
 		c <- i
 		go func() {
 			run(path, -1)
-			//fmt.Println(i, maxdone)
 			maxdone++
 			<-c
 		}()
@@ -342,13 +341,13 @@ func main() {
 	// XXX: Why does this have a RUN: line?
 	//Failed: /Users/thakis/src/llvm/tools/clang/test/Index/Inputs/crash-recovery-code-complete-remap.c
 
-  // XXX: try to pass a something to Walk that can access parameters, use that to inject paths
-  // (or let Walk just do the generator thing?)
+	// XXX: try to pass a something to Walk that can access parameters, use that to inject paths
+	// (or let Walk just do the generator thing?)
 	filepath.Walk("/Users/thakis/src/llvm/tools/clang/test", walk)
 	filepath.Walk("/Users/thakis/src/llvm/tools/clang/unittests", walk)
 
-  // XXX: fancy progress meter
-  // XXX: slightly more detailed status / error printing
+	// XXX: fancy progress meter
+	// XXX: slightly more detailed status / error printing
 
 	// Wait for all tests to complete!
 	for maxdone < i {
