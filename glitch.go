@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
 	"os"
@@ -196,7 +195,8 @@ func run(testfilename string, index int) TestResult {
 
 	if len(state.script) == 0 {
 		// XXX lit says "Test has no run line!"
-		return TestResult{false, nil, nil}
+		// XXX this currently happens for .cpp files below unittests
+		return TestResult{true, "", ""}
 	}
 
 	paths := &Paths{}
@@ -220,9 +220,9 @@ func run(testfilename string, index int) TestResult {
 	isXFail := isExpectedFail(state.xfails)
 	success, stdout, stderr := executeScript(state.script, paths)
 	if !success && !isXFail {
-		return TestResult{false, stdout, stderr}
+		return TestResult{false, stdout.String(), stderr.String()}
 	}
-	return TestResult{true, stdout, stderr}
+	return TestResult{true, stdout.String(), stderr.String()}
 }
 
 func executegtest(testexe string, testname string) TestResult {
@@ -235,12 +235,12 @@ func executegtest(testexe string, testname string) TestResult {
 	err := cmd.Run()
 	if err != nil {
 		if werr, ok := err.(*exec.ExitError); ok && !werr.Success() {
-			return TestResult{false, &stdout, &stderr}
+			return TestResult{false, stdout.String(), stderr.String()}
 		} else {
 			log.Fatal(err)
 		}
 	}
-	return TestResult{true, &stdout, &stderr}
+	return TestResult{true, stdout.String(), stderr.String()}
 }
 
 func getGTestTests(path string) []string {
@@ -277,8 +277,8 @@ type Test struct {
 
 type TestResult struct {
 	success bool
-	stdout  *bytes.Buffer
-	stderr  *bytes.Buffer
+	stdout  string
+	stderr  string
 }
 
 func findTests(path string, result []*Test) []*Test {
@@ -339,8 +339,8 @@ func main() {
 			result := test.run()
 			if !result.success {
 				fmt.Println("Failed: " + test.name)
-				io.Copy(os.Stdout, result.stdout)
-				io.Copy(os.Stdout, result.stderr)
+				fmt.Println("stdout: ", result.stdout)
+				fmt.Println("stderr: ", result.stderr)
 				fails++
 			}
 			total++
