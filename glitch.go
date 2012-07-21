@@ -278,6 +278,8 @@ type TestResult struct {
 type NamedTestResult struct {
 	name   string
 	result TestResult
+	i      int
+	n      int
 }
 
 func findTests(path string, result []*Test) []*Test {
@@ -335,7 +337,7 @@ func main() {
 	go func() {
 		for {
 			result := <-results
-			//fmt.Println(result.name)
+			//fmt.Printf("\r%d/%d", result.i, result.n)
 			if !result.result.success {
 				fmt.Println("Failed: " + result.name)
 				fmt.Println("stdout: ", result.result.stdout)
@@ -345,7 +347,8 @@ func main() {
 		}
 	}()
 
-	for _, test := range tests {
+	n := len(tests)
+	for i, test := range tests {
 		// Don't start more jobs than cap(queue) at once
 		started++
 		queue <- true // value doesn't matter
@@ -353,10 +356,11 @@ func main() {
 		// |test| has when the goroutine starts running. Making a local
 		// copy prevents that (...and slows down the program 0.3s :-/)
 		var t *Test = test
+		j := i
 		go func() {
 			result := t.run()
 			finished++
-			results <- NamedTestResult{t.name, result}
+			results <- NamedTestResult{t.name, result, j, n}
 			<-queue
 		}()
 	}
