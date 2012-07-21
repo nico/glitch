@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"runtime/pprof"
 	"strconv"
 	"strings"
 	"time"
@@ -299,8 +300,19 @@ func findTests(path string, result []*Test) []*Test {
 	return result
 }
 
+var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
+var memprofile = flag.String("memprofile", "", "write memory profile to this file")
+
 func main() {
 	flag.Parse()
+	if *cpuprofile != "" {
+		f, err := os.Create(*cpuprofile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		pprof.StartCPUProfile(f)
+		defer pprof.StopCPUProfile()
+	}
 
 	// XXX needed? system-level stuff uses multiple cores already
 	//runtime.GOMAXPROCS(runtime.NumCPU())
@@ -363,6 +375,16 @@ func main() {
 			results <- NamedTestResult{t.name, result, j, n}
 			<-queue
 		}()
+	}
+
+	if *memprofile != "" {
+		f, err := os.Create(*memprofile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		pprof.WriteHeapProfile(f)
+		f.Close()
+		return
 	}
 
 	// XXX: fancy progress meter
